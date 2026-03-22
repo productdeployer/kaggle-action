@@ -1,143 +1,75 @@
-name: kaggle Action
-author: Rowe Wilson Frederisk Holme
-description: Use kaggle to implement simple CI, which supports GPU.
+name: 'Kaggle Kernel Push'
+author: 'Simplified version based on productdeployer/kaggle-action'
+description: 'Push a notebook/script to Kaggle as a kernel (supports GPU/internet).'
 
 inputs:
   username:
-    description: kaggle username
+    description: 'Kaggle username'
     required: true
   key:
-    description: kaggle key
+    description: 'Kaggle API key'
     required: true
-
-  # id:
-  #   description: The URL slug of your kernel
-  # id_no:
-  #   description: The kernel's numeric ID
   title:
-    description: The title of the kernel
+    description: 'Kernel title (use kebab-case, no spaces)'
     required: true
   code_file:
-    description: The path to your kernel source code
+    description: 'Path to .ipynb or .py file (relative to repo root)'
     required: true
   language:
-    description: The language your kernel is written in
-    default: python
+    description: 'Language'
+    default: 'python'
   kernel_type:
-    description: The type of kernel
-    default: script
-  # is_private:
-  #   description: Whether or not the kernel should be private
+    description: 'notebook or script'
+    default: 'notebook'
   enable_gpu:
-    description: Whether or not the kernel should run on a GPU
-    default: enable
+    description: 'enable or disable'
+    default: 'enable'
   enable_internet:
-    description: Whether or not the kernel should be able to access the internet
-    default: enable
-  # dataset_sources:
-  #   description: A list of dataset sources
-  # competition_sources:
-  #   description: A list of competition sources
-  # kernel_sources:
-  #   description: A list of kernel sources
-
-outputs:
-  automatic_releases_tag:
-    description: The release tag this action just processed
-    value: ""
-  upload_url:
-    description: The URL for uploading additional assets to the release
-    value: ""
+    description: 'enable or disable'
+    default: 'enable'
 
 runs:
   using: composite
   steps:
-    - name: Install kaggle CLI tools
-      shell: pwsh
-      run: python -m pip install --upgrade kaggle --user
-
-    - name: Setup kaggle.json
-      shell: pwsh
+    - name: Install Kaggle CLI
+      shell: bash
       run: |
-        [String]$kaggleInfo = ConvertTo-Json -InputObject @{
-          'username' = '${{ inputs.username }}';
-          'key' = '${{ inputs.key }}'
-        };
-        [String]$kaggleFile = [System.IO.Path]::Combine('~', '.kaggle', 'kaggle.json');
-        New-Item -Path $kaggleFile -Type File -Value $kaggleInfo -Force | Out-Null;
-        if ($IsLinux -or $IsMacOS) {
-          chmod 600 $kaggleFile;
-        }
+        python -m pip install --upgrade pip
+        python -m pip install --upgrade kaggle
 
-    - name: Setup test
-      shell: pwsh
+    - name: Configure Kaggle credentials
+      shell: bash
+      env:
+        KAGGLE_USERNAME: ${{ inputs.username }}
+        KAGGLE_KEY:      ${{ inputs.key }}
       run: |
-        # location
-        Set-Location -Path '${{ github.action_path }}' | Out-Null;
-        [String]$actionPath = '${{ github.action_path }}';
+        mkdir -p ~/.kaggle
+        echo "{\"username\":\"$KAGGLE_USERNAME\",\"key\":\"$KAGGLE_KEY\"}" > ~/.kaggle/kaggle.json
+        chmod 600 ~/.kaggle/kaggle.json
 
-        # kaggle init
-        kaggle kernels init -p $actionPath;
-
-        # process metadata json
-        [String]$jsonPath = [System.IO.Path]::Combine($actionPath, 'kernel-metadata.json');
-        [Hashtable]$metadata = Get-Content -Path $jsonPath -Raw | ConvertFrom-Json -AsHashtable;
-        # $metadata[''] = '$#{{ inputs. }}';
-        $metadata['id'] = $metadata['id'].Split('/')[0] + '/' + '${{ inputs.title }}';
-        $metadata['title'] = '${{ inputs.title }}';
-        $metadata['code_file'] = '${{ github.workspace }}' + '/' + '${{ inputs.code_file }}';
-        $metadata['language'] = '${{ inputs.language }}';
-        $metadata['kernel_type'] = '${{ inputs.kernel_type }}';
-        $metadata['enable_gpu'] = '${{ inputs.enable_gpu }}' -eq 'enable';
-        $metadata['enable_internet'] = '${{ inputs.enable_internet }}' -eq 'enable';
-
-        ConvertTo-Json -InputObject $metadata | Set-Content -Path $jsonPath | Out-Null;
-
-        #kaggle push
-        kaggle kernels push;
-
-    - name: Check status
-      shell: pwsh
+    - name: Push kernel to Kaggle
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        WORKSPACE:   ${{ github.workspace }}
       run: |
-        # location
-        Set-Location -Path '${{ github.action_path }}' | Out-Null;
-        [String]$kernelName = '${{ inputs.title }}';
+        cd "$ACTION_PATH"
 
-        # check status
-        try {
-          while ($true) {
-            [String]$status = (kaggle kernels status $kernelName 2>&1) -join ' ';
-            # error
-            if ($status -like '*error*') {
-              throw [System.Management.Automation.ApplicationFailedException]::new('FAIL: Test(s) failed.');
-            }
-            # cancel
-            elseif ($status -like '*cancel*') {
-              throw [OperationCanceledException]::new('FAIL: Test(s) failed. The kaggle kernel has been canceled.');
-            }
-            #complete
-            elseif ($status -like '*complete*') {
-              Write-Host -Object 'SUCCESS: Kaggle Integration Tests!' -ForegroundColor Green | Out-Null;
-              break;
-            }
-            # running
-            else {
-              Start-Sleep -Seconds 3 | Out-Null;
-            }
-          }
-        }
-        catch [System.Management.Automation.ApplicationFailedException], [OperationCanceledException]  {
-          # write log
-          kaggle kernels output $kernelName;
-          [String]$fullMessage = (Get-Content -Path ($kernelName + '.log') -Raw | ConvertFrom-Json -AsHashtable | ForEach-Object -Process { $_['data'] }) -join '';
-          Write-Host -Object @"
-        ::group::Full log
-        $fullMessage
-        ::endgroup::
-        "@ | Out-Null;
-          throw;
-        }
+        # Create fresh metadata
+        kaggle kernels init -p .
 
-branding:
-  icon: activity
-  color: green
+        # Patch kernel-metadata.json
+        sed -i 's|"title":.*|"title": "${{ inputs.title }}",|'           kernel-metadata.json
+        sed -i 's|"code_file":.*|"code_file": "'"$WORKSPACE"'/${{ inputs.code_file }}",|' kernel-metadata.json
+        sed -i 's|"language":.*|"language": "${{ inputs.language }}",|'  kernel-metadata.json
+        sed -i 's|"kernel_type":.*|"kernel_type": "${{ inputs.kernel_type }}",|' kernel-metadata.json
+        sed -i 's|"is_gpu_enabled":.*|"is_gpu_enabled": ${{ inputs.enable_gpu == 'enable' && 'true' || 'false' }},|' kernel-metadata.json
+        sed -i 's|"enable_internet":.*|"enable_internet": ${{ inputs.enable_internet == 'enable' && 'true' || 'false' }},|' kernel-metadata.json
+
+        # Optional: force slug in id (assumes id starts with username/)
+        sed -i 's|"id":.*|"id": "${{ inputs.username }}/${{ inputs.title }}",|' kernel-metadata.json
+
+        # Push!
+        kaggle kernels push
+
+        echo "Kernel pushed → check https://www.kaggle.com/code/${{ inputs.username }}/${{ inputs.title }}"
