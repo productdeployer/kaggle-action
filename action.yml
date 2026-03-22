@@ -40,11 +40,9 @@ runs:
     - name: Configure Kaggle credentials
       shell: bash
       env:
-        # Use the single token that works for you
-        KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}   # ← Put your working token here as a repo secret
         # Optional fallback (only if needed — usually not, only kaggle cli version < 1.8.0)
-        # KAGGLE_USERNAME: ${{ inputs.username }}
-        # KAGGLE_KEY:      ${{ inputs.key }}
+        KAGGLE_USERNAME: ${{ inputs.username }}
+        KAGGLE_KEY:      ${{ inputs.key }}
       run: |
         mkdir -p ~/.kaggle
         echo "{\"username\":\"$KAGGLE_USERNAME\",\"key\":\"$KAGGLE_KEY\"}" > ~/.kaggle/kaggle.json
@@ -55,6 +53,7 @@ runs:
       env:
         ACTION_PATH: ${{ github.action_path }}
         WORKSPACE:   ${{ github.workspace }}
+        KAGGLE_API_TOKEN: ${{ inputs.key }}
       run: |
         cd "$ACTION_PATH"
 
