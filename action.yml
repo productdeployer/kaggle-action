@@ -61,15 +61,31 @@ runs:
         kaggle kernels init -p .
 
         # Patch kernel-metadata.json
-        sed -i 's|"title":.*|"title": "${{ inputs.title }}",|'           kernel-metadata.json
+        # Patch with correct values (use booleans without quotes)
+        sed -i 's|"title":.*|"title": "${{ inputs.title }}",|' kernel-metadata.json
         sed -i 's|"code_file":.*|"code_file": "'"$WORKSPACE"'/${{ inputs.code_file }}",|' kernel-metadata.json
-        sed -i 's|"language":.*|"language": "${{ inputs.language }}",|'  kernel-metadata.json
+        sed -i 's|"language":.*|"language": "${{ inputs.language }}",|' kernel-metadata.json
         sed -i 's|"kernel_type":.*|"kernel_type": "${{ inputs.kernel_type }}",|' kernel-metadata.json
-        sed -i 's|"is_gpu_enabled":.*|"is_gpu_enabled": ${{ inputs.enable_gpu == 'enable' && 'true' || 'false' }},|' kernel-metadata.json
-        sed -i 's|"enable_internet":.*|"enable_internet": ${{ inputs.enable_internet == 'enable' && 'true' || 'false' }},|' kernel-metadata.json
 
-        # Optional: force slug in id (assumes id starts with username/)
+        # GPU: write real boolean
+        GPU_BOOL=$([[ "${{ inputs.enable_gpu }}" == "enable" ]] && echo true || echo false)
+        sed -i "s|\"enable_gpu\":.*|\"enable_gpu\": $GPU_BOOL,|" kernel-metadata.json
+        # or if the template has "enable_gpu": false already:
+        # sed -i "s|\"enable_gpu\":.*|\"enable_gpu\": $GPU_BOOL,|" kernel-metadata.json
+
+        # TPU: usually keep false unless you specifically need it
+        TPU_BOOL=$([[ "${{ inputs.enable_tpu }}" == "enable" ]] && echo true || echo false)
+        sed -i "s|\"enable_tpu\":.*|\"enable_tpu\": $TPU_BOOL,|" kernel-metadata.json
+
+        # Internet: boolean
+        INTERNET_BOOL=$([[ "${{ inputs.enable_internet }}" == "enable" ]] && echo true || echo false)
+        sed -i "s|\"enable_internet\":.*|\"enable_internet\": $INTERNET_BOOL,|" kernel-metadata.json
+
+        # Optional: force id/slug
         sed -i 's|"id":.*|"id": "${{ inputs.username }}/${{ inputs.title }}",|' kernel-metadata.json
+
+        # Show what we will push (debug)
+        cat kernel-metadata.json
 
         # Push!
         kaggle kernels push
