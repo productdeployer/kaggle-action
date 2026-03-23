@@ -88,6 +88,7 @@ runs:
         cat kernel-metadata.json
 
         # Push!
-        kaggle kernels push
+        # kaggle kernels push
+        kaggle kernels push --accelerator NvidiaTeslaT4
 
         echo "Kernel pushed → check https://www.kaggle.com/code/${{ inputs.username }}/${{ inputs.title }}"
